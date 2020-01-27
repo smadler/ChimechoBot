@@ -3,7 +3,7 @@ const Discord = require('discord.js');
 const botMethods= require('./chimethods.js');
 
 // Import required tables (authentication, blacklist, definition table)
-const auth = require('./auth.json');
+//const auth = require('./auth.json');
 const blackfile = require('./blacklist.json');
 const definitionsFile = require('./definitions.json');
 
@@ -60,6 +60,10 @@ client.on('message', msg => {
 
 	return;
     }
+
+//testing whitelist only on this branch is this code included
+    if (msg.channel.id != 646049007998730290 && msg.channel.id != 668360850750308358)
+	return;
 
     // Check if command for the bot
     if (message.startsWith(prefix)) {
@@ -309,4 +313,4 @@ case 'ring':
 });
 
 
-client.login('TOKEN');
+client.login(process.env.BOT_TOKEN)
