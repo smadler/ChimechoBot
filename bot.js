@@ -309,4 +309,4 @@ case 'ring':
 });
 
 
-client.login(auth.token);
+client.login('TOKEN');
