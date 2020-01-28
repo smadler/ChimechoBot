@@ -1,15 +1,22 @@
+// Set authentication method
+const useAuthFile=false;
+
 // Import required libraries
 const Discord = require('discord.js');
 const botMethods= require('./chimethods.js');
 
 // Import required tables (authentication, blacklist, definition table)
-//const auth = require('./auth.json');
+if(useAuthFile)
+	var auth = require('./auth.json');
 const blackfile = require('./blacklist.json');
 const definitionsFile = require('./definitions.json');
 
 // Set up client
 const client = new Discord.Client();
 var channelBlacklist=blackfile.blacklisted;
+
+// Set up the fileEditor for saving settings
+const fs = require('fs'); 
 
 // Set up defaults
 const prefix='.';
@@ -56,6 +63,17 @@ client.on('message', msg => {
 			botMethods.addMember(msg, QueueTable, DMTable, true);
 		break;
 
+		case 'up':
+		case '.up': // Sends a message to the channel that a room is up.
+			if (QueueTable[DMTable[msg.author].queue] == undefined || msg.author != QueueTable[DMTable[msg.author].queue].owner){
+				msg.reply("An error has occured. Manually set up another Queue from the Queue thread.");
+				DMTable[msg.author]=undefined;
+				return;
+			}
+
+			DMTable[msg.author].queue.send("The lobby is up now. Join in if you have a code!");
+		break;
+
 	} // End Switch
 
 	return;
@@ -75,7 +93,7 @@ client.on('message', msg => {
 
 	// Parse Command
 	switch(cmd) {
-case 'ring':
+
 	    case 'createQ': // Creates a Queue in the given channel if one does not exist already
 
 		if(botMethods.hasQueue(msg, QueueTable)){
@@ -254,6 +272,66 @@ case 'ring':
 
 	    break;
 
+	    case 'save': // Saves the Queue settings for a given user.
+		if(!botMethods.hasQueue(msg, QueueTable)){
+			msg.reply("No active Queue.");
+			break;
+		}
+		if(!botMethods.isOwner(msg, QueueTable)){
+			msg.reply("Invalid Permissions.");
+			break;
+		}
+
+		if(botMethods.saveSettings(msg.author, botMethods.getSettings(QueueTable[msg.channel]), fs))
+			msg.reply("I think I've got all that. I'll have everything ready for you next time you ring.");
+
+	    break;
+
+	    case 'ring': // Creates a Queue in the given channel if one does not exist already with the User's saved settings if possible.
+
+		if(botMethods.hasQueue(msg, QueueTable)){
+			msg.reply("This channel has an active Queue.");
+			break;
+		}
+
+		QueueTable[msg.channel]=botMethods.queueBase(msg);
+
+		let changed=botMethods.setSettings(QueueTable[msg.channel], botMethods.readSettings(msg.author,fs));
+		let replyms="";
+
+		if(changed.maxplayers!=undefined) replyms+=(changed.maxplayers/QueueTable[msg.channel].size)+" rooms. ";
+		if(changed.size!=undefined) replyms+=changed.size+" to a room. ";
+		if(changed.dupes!=undefined){
+			if(changed.dupes)
+				replyms+="With duplicates allowed. ";
+			else
+				replyms+="With no duplicates allowed. ";
+		}
+
+		if(replyms=="")
+			replyms="Ring-a-Ding! "+msg.author+", your queue has been created!";
+		else
+			replyms="Ring-a-Ding! "+msg.author+", your queue has been created just how you like it! "+replyms;
+
+		msg.channel.send(replyms);
+
+	    break;
+
+	    case 'help': // Displays the help menu with a list of commands usable by the average user.
+
+		if(!botMethods.hasQueue(msg, QueueTable))
+			msg.channel.send(definitionsFile.helptext);
+		else if(botMethods.isOwner(msg, QueueTable))
+			msg.channel.send(definitionsFile.helptextown);
+		else
+			msg.channel.send(definitionsFile.helptextjoiner);
+
+	    break;
+
+	// For use in debugging for easier closing of background processes
+	//    case 'crash':
+	//	throw 'up';
+
 	    case 'configureQ': // For use in changing settings
 		if(!botMethods.hasQueue(msg, QueueTable)){
 			msg.reply("No active Queue.");
@@ -264,7 +342,7 @@ case 'ring':
 			break;
 		}
 		if(args.length == 0){
-			msg.reply("What would like to configure? Configuration is of the form "+prefix+"configureQ <mode> <options>");
+			msg.reply("What would like to configure? Configuration is of the form "+prefix+"configureQ <mode> <options>. Use \".configureQ help\" for available options.");
 			break;
 		}
 
@@ -303,6 +381,12 @@ case 'ring':
 
 				msg.reply("The number of people per lobby has been set to "+args[1]+".");
 			break;
+
+			case 'help': // Displays the help menu with a list of configurations usable by the average user.
+
+				msg.channel.send(definitionsFile.configurehelptext);
+
+			break;
 	
 		} // End configure switch
 
@@ -312,5 +396,10 @@ case 'ring':
      }
 });
 
+// Ensure that the filesystem exists for user preferences
+fs.mkdir('./User_Preferences', err => {if (err && err.code != 'EEXIST') throw 'up'});
 
-client.login(process.env.BOT_TOKEN)
+if(useAuthFile)
+	client.login(auth.token);
+else
+	client.login(process.env.BOT_TOKEN);

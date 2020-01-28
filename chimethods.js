@@ -2,6 +2,7 @@
 const defaultNum=3;
 const defaultDuplication=false;
 const allowDM=true;
+const defaultMaxPlayers=-1;
 
 // Returns true if a Queue is active in the given channel
 exports.hasQueue = function (msg, table){
@@ -12,7 +13,75 @@ exports.hasQueue = function (msg, table){
 // and 'owner' set to the message sender
 exports.queueBase = function (msg){
 	return {queued:[], owner:msg.author, size:defaultNum, dupes:defaultDuplication, 
-		open:true, maxplayers:-1};
+		open:true, maxplayers:defaultMaxPlayers};
+}
+
+// Takes a QueueTable entry and creates a SettingsDictionary for it
+exports.getSettings = function (queue){
+
+	let base = {};
+
+	if(queue.size != defaultNum)
+		base.size=queue.size;
+
+	if(queue.dupes != defaultDuplication)
+		base.dupes=queue.dupes;
+	
+	if(queue.maxplayers != defaultMaxPlayers)
+		base.maxplayers=queue.maxplayers;
+
+	return base;
+}
+
+// Takes a SettingsDictonay entry and applies it to a QueueTable entry
+// Returns what settings were updated
+exports.setSettings = function (queue, settings){
+
+	let base = {};
+
+	if(settings.size!=undefined && queue.size != settings.size){
+		base.size=settings.size;
+		queue.size=settings.size;
+	}
+
+	if(settings.dupes!=undefined && queue.dupes != settings.dupes){
+		base.dupes=settings.dupes;
+		queue.dupes=settings.dupes;
+	}
+
+	if(settings.maxplayers!=undefined && queue.maxplayers != settings.maxplayers){
+		base.maxplayers=settings.maxplayers;
+		queue.maxplayers=settings.maxplayers;
+	}
+
+	return base;
+}
+
+// Save a User's settings if able
+// Returns true if able, false otherwise
+exports.saveSettings = function (user, settings, fs){
+	
+	let path = "./User_Preferences/"+user.id+".json";
+
+	fs.writeFile (path, JSON.stringify(settings), function(err) {if(err) return false;});
+	
+	return true;
+}
+
+// Retrieve a User's settings if able
+exports.readSettings = function (user, fs){
+	
+	let result = {};
+	
+	let path = "./User_Preferences/"+user.id+".json";
+
+	try{
+		let data=fs.readFileSync(path);
+		result = JSON.parse(data); 
+
+	} catch(err){} // Catches the error of the file not existing
+
+	return result;
 }
 
 // Returns true iff the user is the owner of a given channel's Queue
@@ -137,7 +206,7 @@ exports.createGroup = function (msg, table, dmtable, fromdm){
 		// Get a user 
 		let user=table[chn].queued.shift();
 
-		user.send("Your join code is "+code+". The lobby is up now. If you miss your chance, you'll need to join the queue again.").catch(err => msg.channel.send('Unable to alert a player of the code.'));
+		user.send("Your join code is "+code+". The lobby is going up soon. If you miss your chance, you'll need to join the queue again.").catch(err => msg.channel.send('Unable to alert a player of the code.'));
 
 		total++;
 
