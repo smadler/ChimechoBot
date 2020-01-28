@@ -61,3 +61,4 @@ Configuration options:
   - Max number of attempts
   - Allow users to add themselevs multiple times in a single Queue
   - Unique user tracking on/off 
+//
