@@ -20,6 +20,7 @@ const fs = require('fs');
 
 // Set up defaults
 const prefix='.';
+const errorFile="errorfile.log";
 
 // Set up blank QueueTable. The QueueTable holds the active Queues and all information needed to run them (all settings and the like).
 var QueueTable={};
@@ -33,6 +34,7 @@ client.on('ready', () => {
 
 
 client.on('message', msg => {
+  try{
 
     // Escape if channel is in the blacklist or it is a message of the bot
     if (channelBlacklist.indexOf(msg.channel.id) != -1 || msg.author == client.user)
@@ -182,6 +184,10 @@ client.on('message', msg => {
 			msg.reply("Queue filled. Wait to see if a user leaves.");
 			break;
 		}
+		if(botMethods.checkBan(msg.author.id, QueueTable[msg.channel].banlist)!=-1){
+			msg.reply("You are currently banned from this host's raid queues.");
+			break;
+		}
 
 		if(!QueueTable[msg.channel].dupes && botMethods.isEnqueued(msg, QueueTable))
 			msg.reply("You are already Queued");
@@ -214,6 +220,23 @@ client.on('message', msg => {
 			botMethods.clearIfEmpty(msg, QueueTable, msg.channel);
 	    break;
 
+	    case 'numQ': // Displays the user's first spot in the Queue
+		if(!botMethods.hasQueue(msg, QueueTable)){
+			msg.reply("No active Queue.");
+			break;
+		}
+
+		let y=botMethods.findUser(msg, QueueTable);
+
+		if(y==-1){
+			msg.reply("You are not in the Queue.");
+		}
+		else{
+			msg.reply("You are in position "+(y+1)+" of the Queue.");
+		}
+
+	    break;
+
 	    case 'viewQ': // Sends Queue owner a list of evryone in the Queue 
 		if(!botMethods.hasQueue(msg, QueueTable)){
 			msg.reply("No active Queue.");
@@ -228,6 +251,27 @@ client.on('message', msg => {
 			break;
 		}
 		msg.author.send(QueueTable[msg.channel].queued);
+	    break;
+
+
+	    case 'countQ': // Sends Queue owner how many are in the Queue 
+		if(!botMethods.hasQueue(msg, QueueTable)){
+			msg.reply("No active Queue.");
+			break;
+		}
+		if(!botMethods.isOwner(msg, QueueTable)){
+			msg.reply("Invalid Permissions.");
+			break;
+		}
+		if(QueueTable[msg.channel].queued.length==0){
+			msg.author.send("Queue is empty.");
+			break;
+		}
+		if(QueueTable[msg.channel].queued.length==1){
+			msg.author.send("There is 1 person in the Queue.");
+			break;
+		}
+		msg.author.send("There are "+QueueTable[msg.channel].queued.length+" people in the Queue");
 	    break;
 
 	    case 'activeQueues': // For use in identifying when matinenece is safe
@@ -307,6 +351,7 @@ client.on('message', msg => {
 			else
 				replyms+="With no duplicates allowed. ";
 		}
+		if(changed.banlist!=undefined) replyms+="You have "+changed.banlist.length+" users banned. ";
 
 		if(replyms=="")
 			replyms="Ring-a-Ding! "+msg.author+", your queue has been created!";
@@ -328,8 +373,89 @@ client.on('message', msg => {
 
 	    break;
 
-	// For use in debugging for easier closing of background processes
-	//    case 'crash':
+	    /*case 'echo': // Debug Command
+		
+		if(args.length == 0){
+			msg.reply("What would like to echo?");
+			break;
+		}
+			msg.channel.send(args[0]);
+
+	    break;*/
+
+	    case 'boot': // Kicks all instances of the user from the Queue
+		if(!botMethods.hasQueue(msg, QueueTable)){
+			msg.reply("No active Queue.");
+			break;
+		}
+		if(!botMethods.isOwner(msg, QueueTable)){
+			msg.reply("Invalid Permissions.");
+			break;
+		}
+		if(args.length == 0){
+			msg.reply("Who would you like to kick? Kicking needs a command of the form "+prefix+"boot <user>.");
+			break;
+		}
+
+		if(botMethods.kickUser(msg, args[0], QueueTable))
+			msg.reply(args[0]+" has been kicked.");
+		else
+			msg.reply(args[0]+" was not in the Queue.");
+
+	    break;
+
+	    case 'ban': // Kicks all instances of the user from the Queue and prevents them from joining. Saved in .save
+		if(!botMethods.hasQueue(msg, QueueTable)){
+			msg.reply("No active Queue.");
+			break;
+		}
+		if(!botMethods.isOwner(msg, QueueTable)){
+			msg.reply("Invalid Permissions.");
+			break;
+		}
+		if(args.length == 0){
+			msg.reply("Who would you like to ban? Banning needs a command of the form "+prefix+"ban <user>.");
+			break;
+		}
+
+		botMethods.kickUser(msg, args[0], QueueTable);
+
+		let userstrip=args[0].replace(/[\\<>@#&!]/g, "");
+		
+		if(botMethods.checkBan(userstrip, QueueTable[msg.channel].banlist)==-1){
+			QueueTable[msg.channel].banlist.push(userstrip);
+			msg.reply(args[0]+" has been banned. Remember to .save to keep your bans.");
+		}
+
+	    break;
+
+	    case 'unban': // Unbans a user
+		if(!botMethods.hasQueue(msg, QueueTable)){
+			msg.reply("No active Queue.");
+			break;
+		}
+		if(!botMethods.isOwner(msg, QueueTable)){
+			msg.reply("Invalid Permissions.");
+			break;
+		}
+		if(args.length == 0){
+			msg.reply("Who would you like to unban? Unbanning needs a command of the form "+prefix+"unban <user>.");
+			break;
+		}
+
+		let xy=botMethods.checkBan(args[0].replace(/[\\<>@#&!]/g, ""), QueueTable[msg.channel].banlist);
+
+		if(xy!=-1){
+			QueueTable[msg.channel].banlist.splice(xy,1);
+			msg.reply(args[0]+" has been unbanned. Remember to .save to keep your bans.");
+		}
+		else
+			msg.reply(args[0]+" was not banned.");
+
+	    break;
+
+	// For use in debugging and testing
+	//   case 'crash':
 	//	throw 'up';
 
 	    case 'configureQ': // For use in changing settings
@@ -393,7 +519,24 @@ client.on('message', msg => {
 	    break;
 
          } // End Switch
-     }
+     } // End if
+  }
+  catch (err){
+
+	let time="";
+		
+	try{time=new Date().toGMTString();}
+	catch(er){}
+
+	let errmess = time+":\n"+err+"|\n\n";
+
+ 	fs.appendFile(errorFile, errmess, (erro) => {
+ 		// If there's a problem writing errors, just silently suffer
+	});
+	
+	try{msg.channel.send("Oh, I don't feel so good.");}
+	catch(er){}
+  }
 });
 
 // Ensure that the filesystem exists for user preferences
