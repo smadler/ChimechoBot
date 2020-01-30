@@ -32,6 +32,13 @@ Commands:
    - lobbysize <number> - Changes number of people per lobby.
    - lobbies <number> - Set a max number of lobbies. Automatically closes queue when last lobby is filled and clears queue when last lobby is called via next.
    - openlobby - Removes the max lobby restriction set by lobbies.
+   - showusers - Send a list of who joined to Queue owner
+   - hideusers - Do not send a list of who joined to Queue owner
+   - showjoin  - Users will recieve acknowledgement of joining by react.
+   - hidejoin - Users will recieve acknowledgement of joining by DM and the .join messages will be deleted.
+   - attempts - Set a maximum number of joins each user gets
+   - openattempt - Removes the max number of attempts as set by attempts 
+   - current - Display the current configuration.
 
 .save - Saves the current configuration on a per user basis.
 
@@ -46,6 +53,10 @@ Commands:
 .unban <user> - Unbans a user
 
 .boot <user> - kicks a user from the Queue
+
+.version - Announce version number
+
+diagnose - Sends errorlogfile. only usable from DM.
 
 
 Bot can be tried out here https://discord.gg/44j5GBg

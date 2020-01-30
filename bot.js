@@ -21,6 +21,7 @@ const fs = require('fs');
 // Set up defaults
 const prefix='.';
 const errorFile="errorfile.log";
+//const transferFile="temp.json";
 
 const joinReact="646542193934336000";
 // Relevant reactions:
@@ -59,6 +60,10 @@ client.on('message', msg => {
 	let args = message.split(' ');
         let cmd = args[0];
 
+
+	if(DMTable[msg.author].lastcode=='nil' && !(args[0]=='numQ' || args[0]=='.numQ' || args[0]=='diagnose'))
+		return;
+
 	switch(cmd) {
 		case 'next':
 		case '.next': // Call a new group on the Queue that was just sent.
@@ -79,6 +84,33 @@ client.on('message', msg => {
 			}
 
 			DMTable[msg.author].queue.send("The lobby is up now. Join in if you have a code!");
+			//DMTable[msg.author].queue.send("\`The lobby is up now. Join in if you have a code!\`");
+
+		case 'numQ':
+		case '.numQ': // DM version of numQ
+			if(QueueTable[DMTable[msg.author].queue] == undefined){
+				DMTable[msg.author]==undefined;
+				msg.author.send("The Queue no longer exists.");
+				break;
+			}
+
+			let cludgemsg={author:msg.author, channel:DMTable[msg.author].queue};
+			let y=botMethods.findUser(cludgemsg, QueueTable);
+
+			if(y==-1){
+				msg.author.send("You are not in the Queue.");
+			}
+			else{
+				msg.author.send("You are in position "+(y+1)+" of the Queue.");
+			}
+		break;
+
+		case 'diagnose': // Send the contents of the errorfile
+			msg.author.send("Sending...");
+
+			fs.readFile(errorFile,'utf8', function(err, datat) {
+				msg.author.send(datat).catch(function(error) {msg.author.send("I'm feeling fine.");});
+			});
 		break;
 
 	} // End Switch
@@ -109,6 +141,21 @@ client.on('message', msg => {
 		}
 		QueueTable[msg.channel]=botMethods.queueBase(msg);
 		msg.reply("Queue created.");
+
+	    break;
+
+	    case 'version': // Let's user know what version is running
+
+		let vers=require('./package.json').version;
+
+		if(args.length != 0 && args[0] == 'new'){
+			if(args.length != 1)
+				msg.channel.send("New features as of version "+args[1]+":\n"+require('./versioninfo.json')[args[1]]);
+			else
+				msg.channel.send("New features as of version "+vers+":\n"+require('./versioninfo.json')[vers]);
+		}
+		else
+			msg.channel.send("I'm currently running version "+vers);
 
 	    break;
 
@@ -193,13 +240,27 @@ client.on('message', msg => {
 			msg.reply("You are currently banned from this host's raid queues.");
 			break;
 		}
+		if(!botMethods.attemptAvailable(msg, QueueTable)){
+			let rpl="You have already used your "+QueueTable[msg.channel].maxAttempts;
+			if(QueueTable[msg.channel].maxAttempts==1)
+				rpl+=" attempt.";
+			else
+				rpl+=" attempts.";
+			msg.reply(rpl);
+			break;
+		}
 
 		if(!QueueTable[msg.channel].dupes && botMethods.isEnqueued(msg, QueueTable))
 			msg.reply("You are already Queued");
 		else{
 			QueueTable[msg.channel].queued.push(msg.author);
 
-			msg.react(joinReact);
+			if(QueueTable[msg.channel].useJoinReact)
+				msg.react(joinReact);
+			else{
+				msg.author.send("You have joined in position "+(botMethods.findUser(msg, QueueTable)+1)+" of the Queue.");
+				msg.delete();
+			}
 			
 			if(botMethods.isFilled(msg, QueueTable))
 				msg.channel.send("Queue filled.");
@@ -240,7 +301,10 @@ client.on('message', msg => {
 		}
 		else{
 			msg.author.send("You are in position "+(y+1)+" of the Queue.");
+			DMTable[msg.author]=botMethods.dmBase(msg.channel, 'nil');
 		}
+
+		msg.delete();
 
 	    break;
 
@@ -349,22 +413,8 @@ client.on('message', msg => {
 
 		let changed=botMethods.setSettings(QueueTable[msg.channel], botMethods.readSettings(msg.author,fs));
 		let replyms="";
-
-		if(changed.maxplayers!=undefined) replyms+=(changed.maxplayers/QueueTable[msg.channel].size)+" rooms. ";
-		if(changed.size!=undefined) replyms+=changed.size+" to a room. ";
-		if(changed.dupes!=undefined){
-			if(changed.dupes)
-				replyms+="With duplicates allowed. ";
-			else
-				replyms+="With no duplicates allowed. ";
-		}
-		if(changed.sendUseList!=undefined){
-			if(changed.sendUseList)
-				replyms+="You will be notified of who joins. ";
-			else
-				replyms+="You will not be notified of who joins. ";
-		}
-		if(changed.banlist!=undefined) replyms+="You have "+changed.banlist.length+" users banned. ";
+	
+		replyms=botMethods.stringifyConfig(changed, QueueTable, msg);
 
 		if(replyms=="")
 			replyms="Ring-a-Ding! "+msg.author+", your queue has been created!";
@@ -506,6 +556,35 @@ client.on('message', msg => {
 				msg.reply("The number of lobbies has been unrestricted.");
 			break;
 
+			case 'current': // Display current config
+	
+				let replym= "Your current configuraton is:\n"
+
+				replym+=botMethods.stringifyConfig(botMethods.getSettings(QueueTable[msg.channel]), QueueTable, msg);
+
+				msg.reply(replym);
+
+			break;
+			
+			case 'attempts': // Maximum number of attempts per user
+
+				if(args.length == 1 || isNaN(args[1])){
+					msg.reply("Configuring the max number of attempts requires a number to be passed as the option.");
+					break;
+				}
+
+				QueueTable[msg.channel].maxAttempts=args[1];
+
+				msg.reply("The maximum number of attempts per user has been set to "+args[1]+".");
+			break;
+
+			case 'openattempt': // Remove maximum number of attempts
+
+				QueueTable[msg.channel].maxAttempts=-1;
+
+				msg.reply("The maximum number of attempts per user has been unrestricted.");
+			break;
+
 			case 'showusers': // Show who is sent the code
 
 				QueueTable[msg.channel].sendUseList=true;
@@ -518,6 +597,20 @@ client.on('message', msg => {
 				QueueTable[msg.channel].sendUseList=false;
 
 				msg.reply("You will no longer be sent a list of the joining users.");
+			break;
+
+			case 'hidejoin': // Hide the .join message
+
+				QueueTable[msg.channel].useJoinReact=false;
+
+				msg.reply("Users will recieve acknowledgement of joining by DM.");
+			break;
+
+			case 'showjoin': // Show the .join message
+
+				QueueTable[msg.channel].useJoinReact=true;
+
+				msg.reply("Users will recieve acknowledgement of joining by react.");
 			break;
 
 

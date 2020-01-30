@@ -4,6 +4,8 @@ const defaultDuplication=false;
 const allowDM=true;
 const defaultMaxPlayers=-1;
 const defaultSendUseList=false;
+const defaultUseJoinReact=true;
+const defaultmaxAttempts=-1;
 
 // Returns true if a Queue is active in the given channel
 exports.hasQueue = function (msg, table){
@@ -14,7 +16,8 @@ exports.hasQueue = function (msg, table){
 // and 'owner' set to the message sender
 exports.queueBase = function (msg){
 	return {queued:[], owner:msg.author, size:defaultNum, dupes:defaultDuplication, 
-		open:true, maxplayers:defaultMaxPlayers, banlist:[], sendUseList:defaultSendUseList};
+		open:true, maxplayers:defaultMaxPlayers, banlist:[], sendUseList:defaultSendUseList,
+		useJoinReact:defaultUseJoinReact, userTrack:{}, maxAttempts:defaultmaxAttempts};
 }
 
 // Takes a QueueTable entry and creates a SettingsDictionary for it
@@ -33,6 +36,12 @@ exports.getSettings = function (queue){
 
 	if(queue.sendUseList != defaultSendUseList)
 		base.sendUseList=queue.sendUseList;
+	
+	if(queue.useJoinReact != defaultUseJoinReact)
+		base.useJoinReact=queue.useJoinReact;
+	
+	if(queue.maxAttempts != defaultmaxAttempts)
+		base.maxAttempts=queue.maxAttempts;
 	
 	if(queue.banlist.length!=0)
 		base.banlist=queue.banlist;
@@ -65,6 +74,17 @@ exports.setSettings = function (queue, settings){
 		base.sendUseList=settings.sendUseList;
 		queue.sendUseList=settings.sendUseList;
 	}
+
+	if(settings.useJoinReact!=undefined && queue.useJoinReact != settings.useJoinReact){
+		base.useJoinReact=settings.useJoinReact;
+		queue.useJoinReact=settings.useJoinReact;
+	}
+
+	if(settings.maxAttempts!=undefined && queue.maxAttempts != settings.maxAttempts){
+		base.maxAttempts=settings.maxAttempts;
+		queue.maxAttempts=settings.maxAttempts;
+	}
+
 
 	if(settings.banlist!=undefined && queue.banlist != settings.banlist){
 		base.banlist=settings.banlist;
@@ -116,6 +136,18 @@ exports.checkBan = function (user, banlist){
 	return -1;
 }
 
+// Returns true if the user is under the max attempts for a channel
+exports.attemptAvailable = function (msg, table){
+	
+	if(table[msg.channel].maxAttempts==-1)
+		return true;
+
+	if(table[msg.channel].userTrack[msg.author.id]==undefined)
+		return true;
+
+	return table[msg.channel].userTrack[msg.author.id]<table[msg.channel].maxAttempts;
+}
+
 // Returns true iff the user is a mod of a given channel
 exports.isMod = function (msg, modNames){
 
@@ -127,6 +159,48 @@ exports.isMod = function (msg, modNames){
 				return true;
 
 	return false;
+}
+
+// Returns a string representing the current configuration in readable English
+exports.stringifyConfig = function (config, table, msg){
+
+	let replyms="";
+
+	if(config.maxplayers!=undefined) replyms+=(config.maxplayers/table[msg.channel].size)+" rooms. ";
+	if(config.size!=undefined) replyms+=config.size+" to a room. ";
+	if(config.dupes!=undefined){
+		if(config.dupes)
+			replyms+="With duplicates allowed. ";
+		else
+			replyms+="With no duplicates allowed. ";
+	}
+	if(config.useJoinReact!=undefined){
+		if(config.useJoinReact)
+			replyms+=".joins will be acknowledged by reacts. ";
+		else
+			replyms+=".joins will be acknowledged by DM. ";
+	}
+	if(config.sendUseList!=undefined){
+		if(config.sendUseList)
+			replyms+="You will be notified of who joins. ";
+		else
+			replyms+="You will not be notified of who joins. ";
+	}
+	if(config.maxAttempts!=undefined){
+		if(config.maxAttempts==-1)
+			replyms+="Each user may join any number of times. ";
+		else{
+			replyms+="Each user may join "+config.maxAttempts;
+			
+			if(config.maxAttempts==1)
+				replyms+=" time. ";
+			else
+				replyms+=" times. ";
+		}
+	}
+	if(config.banlist!=undefined) replyms+="You have "+config.banlist.length+" users banned. ";
+
+	return replyms;
 }
 
 // Clears the Queue if the Queue is empty and messages the owner/channel that the Queue no longer exists.
@@ -270,7 +344,16 @@ exports.createGroup = function (msg, table, dmtable, fromdm){
 		let user=table[chn].queued.shift();
 	
 		if(table[chn].sendUseList)
-			totaltext+=user;
+			totaltext+=user+" ";
+
+		// Track number of times user has joined of relevant, and number of users that have joined
+		if (table[chn].maxAttempts==-1)
+			table[chn].userTrack[user.id]=-1;
+		else{
+			if(table[chn].userTrack[user.id]==-1||table[chn].userTrack[user.id]==undefined)
+				table[chn].userTrack[user.id]=0;
+			table[chn].userTrack[user.id]++;
+		}
 
 		user.send("Your join code is "+code+". The lobby is going up soon. If you miss your chance, you'll need to join the queue again.").catch(err => msg.channel.send('Unable to alert a player of the code.'));
 
@@ -282,12 +365,16 @@ exports.createGroup = function (msg, table, dmtable, fromdm){
 		}
 	}
 
+	let tosend="";
+
 	// Alert Queue owner to the code and how many to expect
-	if(total == 1) msg.author.send("The code is "+code+". "+total+" user is joining.");
-	else msg.author.send("The code is "+code+". "+total+" users are joining.");
+	if(total == 1) tosend="The code is "+code+". "+total+" user is joining.";
+	else tosend="The code is "+code+". "+total+" users are joining.";
 
 	if(table[chn].sendUseList)
-		msg.author.send("Joining users: "+totaltext);
+		tosend+="\nJoining users: "+totaltext;
+
+	msg.author.send(tosend);
 
 	// Set up DMTable entry if needed. Otherwise update with new code.
 	if(fromdm)
@@ -346,12 +433,23 @@ exports.addMember = function (msg, table, dmtable, fromdm){
 	// Get a user 
 	let user=table[chn].queued.shift();
 
+	// Track number of times user has joined of relevant, and number of users that have joined
+	if (table[chn].maxAttempts==-1)
+		table[chn].userTrack[user.id]=-1;
+	else{
+		if(table[chn].userTrack[user.id]==-1||table[chn].userTrack[user.id]==undefined)
+			table[chn].userTrack[user.id]=0;
+		table[chn].userTrack[user.id]++;
+	}
+
 	user.send("Your join code is "+code+". The lobby is up now. If you miss your chance, you'll need to join the queue again.").catch(err => msg.channel.send('Unable to alert a player of the code.'));
 
-	msg.author.send("The next in queue has been sent a code.");
-	
+	let tosend="The next in queue has been sent a code.";
+
 	if(table[chn].sendUseList)
-		msg.author.send("Joining user: "+user);
+		tosend+="\nJoining user: "+user;
+
+	msg.author.send(tosend);
 
 	if(!table[chn].open || table[chn].maxplayers == 0)
 		if(this.clearIfEmpty(msg, table, chn))
